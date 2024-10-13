@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
     private var tagList: LinearLayout? = null
     private var nfcAdapter: NfcAdapter? = null
+    private var scannedTagHex: String? = null // Variable to store the hex ID
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,8 +93,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-
-
     private fun resolveIntent(intent: Intent) {
         val validActions = listOf(
             NfcAdapter.ACTION_TAG_DISCOVERED,
@@ -117,29 +116,32 @@ class MainActivity : AppCompatActivity() {
                 val msg = NdefMessage(arrayOf(record))
                 messages.add(msg)
             }
+
+            // Get the hex ID for the first alert dialog
+            val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)
+            scannedTagHex = tag?.id?.let { toHex(it) } // Store the hex ID for later use
+
             // Setup the views
             buildTagViews(messages)
 
-            // Show alert dialog after scanning is completed
-            showScanCompletedAlert()
+            // Show the first alert with hex ID
+            showScanCompletedAlertWithHexId()
         }
     }
 
-
-    private fun showScanCompletedAlert() {
+    private fun showScanCompletedAlertWithHexId() {
         MaterialAlertDialogBuilder(this)
             .setTitle("Scan Completed")
-            .setMessage("The NFC scan has been successfully completed.")
+            .setMessage("The NFC tag's Hex ID: $scannedTagHex")
             .setPositiveButton("Authenticate") { dialog, _ ->
-                // Call method to fetch user IDs and show the first ID
-                fetchAndShowFirstId()
+                // Call method to fetch all objects and show them
+                fetchAndShowAllUsers()
                 dialog.dismiss()
             }
             .show()
     }
 
-
-    private fun fetchAndShowFirstId() {
+    private fun fetchAndShowAllUsers() {
         // Using Kotlin Coroutines to make the network request on a background thread
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -158,41 +160,36 @@ class MainActivity : AppCompatActivity() {
 
                     // Parse the JSON array response
                     val jsonArray = JSONArray(response)
+
+                    // Iterate over the user data and try to find a match with scannedTagHex
                     var matchedObject: JSONObject? = null
-
-                    // Replace this with your scanned NFC tag ID
-                    val scannedId = "your-scanned-nfc-id"
-
-                    // Loop through the fetched IDs and compare with the scanned ID
                     for (i in 0 until jsonArray.length()) {
                         val userObject = jsonArray.getJSONObject(i)
-                        val fetchedId = userObject.getString("id")
+                        val hexId = userObject.getString("id") // Replace "id" with the actual field name if different
 
-                        // Compare the scanned NFC tag ID with the fetched ID
-                        if (fetchedId.equals(scannedId, ignoreCase = true)) {
+                        // Check if the fetched hexId matches the scannedTagHex
+                        if (hexId == scannedTagHex) {
                             matchedObject = userObject
-                            break
+                            break // Stop the loop if a match is found
                         }
                     }
 
-                    // Show result dialog on the main thread
+                    // Show the result in a dialog on the main thread
                     withContext(Dispatchers.Main) {
                         if (matchedObject != null) {
-                            // Extract user information from the matched object
-                            val userInfo = buildUserInfoString(matchedObject)
-
-                            // Show all the details of the matched object
+                            // Show the matched object details
                             MaterialAlertDialogBuilder(this@MainActivity)
-                                .setTitle("Authentication Successful")
-                                .setMessage("The scanned NFC ID matches with the following user details:\n\n$userInfo")
+                                .setTitle("Matched User Information")
+                                .setMessage(matchedObject.toString(4)) // Pretty print the JSON object
                                 .setPositiveButton("OK") { dialog, _ ->
                                     dialog.dismiss()
                                 }
                                 .show()
                         } else {
+                            // No match found
                             MaterialAlertDialogBuilder(this@MainActivity)
-                                .setTitle("Authentication Failed")
-                                .setMessage("No matching user ID found for the scanned NFC ID.")
+                                .setTitle("No Match Found")
+                                .setMessage("No matching Hex ID was found.")
                                 .setPositiveButton("OK") { dialog, _ ->
                                     dialog.dismiss()
                                 }
@@ -225,26 +222,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    // Helper function to build a string containing the user details
-    private fun buildUserInfoString(userObject: JSONObject): String {
-        // Extract the details from the matched user object
-        val id = userObject.getString("id")
-        val name = userObject.optString("name", "N/A")
-        val email = userObject.optString("email", "N/A")
-        val phone = userObject.optString("phone", "N/A")
-        val address = userObject.optString("address", "N/A")
-
-        // You can add more fields here as needed
-        return """
-        ID: $id
-        Name: $name
-        Email: $email
-        Phone: $phone
-        Address: $address
-    """.trimIndent()
-    }
-
 
 
     private fun dumpTagData(tag: Tag): String {
@@ -312,7 +289,6 @@ class MainActivity : AppCompatActivity() {
         return result
     }
 
-
     private fun buildTagViews(msgs: List<NdefMessage>) {
         if (msgs.isEmpty()) {
             return
@@ -334,7 +310,6 @@ class MainActivity : AppCompatActivity() {
             content.addView(inflater.inflate(R.layout.tag_divider, content, false), 2 + i)
         }
     }
-
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)

@@ -24,4 +24,4 @@
         android:textAppearance="?android:attr/textAppearanceMedium"
         android:textIsSelectable="true"
         android:ellipsize="end"
-        android:gravity="center_vertical" />
+        android:gravity="center" />
